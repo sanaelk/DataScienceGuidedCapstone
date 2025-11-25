@@ -1,0 +1,166 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+print("=== EXPLORATORY DATA ANALYSIS - FOOTBALL MATCHES ===\n")
+
+# Load the wrangled data
+matches = pd.read_csv('matches.csv')
+matches['datetime'] = pd.to_datetime(matches['datetime'])
+
+print("1. BASIC DATASET OVERVIEW")
+print("-" * 40)
+print(f"Dataset shape: {matches.shape}")
+print(f"Date range: {matches['datetime'].min()} to {matches['datetime'].max()}")
+print(f"Total matches: {len(matches)}")
+print("\nFirst few matches:")
+print(matches.head())
+
+print("\n2. MATCH RESULTS DISTRIBUTION")
+print("-" * 40)
+result_counts = matches['result'].value_counts()
+print(result_counts)
+
+# Plot results distribution
+plt.figure(figsize=(10, 4))
+
+plt.subplot(1, 2, 1)
+result_counts.plot(kind='bar', color=['lightblue', 'lightcoral', 'lightgreen'])
+plt.title('Match Results Distribution')
+plt.xlabel('Result')
+plt.ylabel('Number of Matches')
+plt.xticks(rotation=45)
+
+print(f"\nHome Win Percentage: {(result_counts['Home Win']/len(matches)*100:.1f}%")
+print(f"Away Win Percentage: {(result_counts['Away Win']/len(matches)*100:.1f}%")
+print(f"Draw Percentage: {(result_counts['Draw']/len(matches)*100:.1f}%")
+
+print("\n3. GOALS ANALYSIS")
+print("-" * 40)
+print("Goals Statistics:")
+print(f"Average home goals: {matches['home_goals'].mean():.2f}")
+print(f"Average away goals: {matches['away_goals'].mean():.2f}")
+print(f"Average total goals: {matches['total_goals'].mean():.2f}")
+print(f"Highest scoring match: {matches['total_goals'].max()} goals")
+print(f"Most common score: {matches['home_goals'].mode()[0]}-{matches['away_goals'].mode()[0]}")
+
+# Plot goals distribution
+plt.subplot(1, 2, 2)
+matches['total_goals'].hist(bins=20, alpha=0.7, color='purple')
+plt.title('Distribution of Total Goals per Match')
+plt.xlabel('Total Goals')
+plt.ylabel('Frequency')
+
+plt.tight_layout()
+plt.show()
+
+print("\n4. HOME VS AWAY PERFORMANCE")
+print("-" * 40)
+# Home advantage analysis
+home_win_rate = (matches['result'] == 'Home Win').mean()
+away_win_rate = (matches['result'] == 'Away Win').mean()
+draw_rate = (matches['result'] == 'Draw').mean()
+
+print(f"Home win rate: {home_win_rate*100:.1f}%")
+print(f"Away win rate: {away_win_rate*100:.1f}%")
+print(f"Draw rate: {draw_rate*100:.1f}%")
+
+# Scatter plot of home vs away goals
+plt.figure(figsize=(10, 4))
+
+plt.subplot(1, 2, 1)
+plt.scatter(matches['home_goals'], matches['away_goals'], alpha=0.5)
+plt.plot([0, 10], [0, 10], 'r--', alpha=0.5)  # Diagonal line for reference
+plt.title('Home Goals vs Away Goals')
+plt.xlabel('Home Goals')
+plt.ylabel('Away Goals')
+
+print("\n5. CORRELATION ANALYSIS")
+print("-" * 40)
+# Calculate correlations between numeric features
+numeric_cols = ['home_goals', 'away_goals', 'total_goals', 'penalty_goals', 'own_goals']
+correlation_matrix = matches[numeric_cols].corr()
+
+print("Correlation Matrix:")
+print(correlation_matrix)
+
+# Heatmap of correlations
+plt.subplot(1, 2, 2)
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
+plt.title('Feature Correlations')
+
+plt.tight_layout()
+plt.show()
+
+print("\n6. SEASONAL TRENDS")
+print("-" * 40)
+# Extract year and month from datetime
+matches['year'] = matches['datetime'].dt.year
+matches['month'] = matches['datetime'].dt.month
+
+# Matches per year
+matches_per_year = matches['year'].value_counts().sort_index()
+
+plt.figure(figsize=(12, 4))
+
+plt.subplot(1, 2, 1)
+matches_per_year.plot(kind='line', marker='o')
+plt.title('Matches per Year')
+plt.xlabel('Year')
+plt.ylabel('Number of Matches')
+plt.xticks(rotation=45)
+
+# Goals per year
+goals_per_year = matches.groupby('year')['total_goals'].mean()
+
+plt.subplot(1, 2, 2)
+goals_per_year.plot(kind='line', marker='o', color='green')
+plt.title('Average Goals per Match by Year')
+plt.xlabel('Year')
+plt.ylabel('Average Goals')
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+print("\n7. TEAM PERFORMANCE ANALYSIS")
+print("-" * 40)
+# Top 10 teams by number of matches played
+home_matches = matches['home_team'].value_counts()
+away_matches = matches['away_team'].value_counts()
+total_matches = home_matches.add(away_matches, fill_value=0).sort_values(ascending=False)
+
+print("Top 10 teams by matches played:")
+print(total_matches.head(10))
+
+# Analyze a few top teams
+top_teams = total_matches.head(5).index
+
+plt.figure(figsize=(12, 5))
+for i, team in enumerate(top_teams, 1):
+    team_home = matches[matches['home_team'] == team]
+    team_away = matches[matches['away_team'] == team]
+    team_all = pd.concat([team_home, team_away])
+    
+    win_rate = (len(team_all[team_all['result'] == ('Home Win' if team_all['home_team'] == team else 'Away Win')]) / len(team_all)) * 100
+    
+    plt.subplot(2, 3, i)
+    team_all['result'].value_counts().plot(kind='bar')
+    plt.title(f'{team}\nWin Rate: {win_rate:.1f}%')
+    plt.xticks(rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+print("\n8. KEY INSIGHTS SUMMARY")
+print("-" * 40)
+print("• Home teams win about {:.1f}% of matches".format(home_win_rate * 100))
+print("• The average match has {:.1f} total goals".format(matches['total_goals'].mean()))
+print("• Most common result type: {}".format(result_counts.index[0]))
+print("• Strong correlation between home goals and total goals: {:.2f}".format(
+    correlation_matrix.loc['home_goals', 'total_goals']))
+print("• Number of matches has {} over time".format(
+    "increased" if matches_per_year.iloc[-1] > matches_per_year.iloc[0] else "decreased"))
+
+print("\n=== EDA COMPLETE ===")
