@@ -1,0 +1,181 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+import matplotlib.pyplot as plt
+
+print("=== PRE-PROCESSING & TRAINING DATA DEVELOPMENT ===\n")
+
+# Load the data from our EDA
+matches = pd.read_csv('matches.csv')
+matches['datetime'] = pd.to_datetime(matches['datetime'])
+
+print("1. INITIAL DATA OVERVIEW")
+print("-" * 40)
+print(f"Dataset shape: {matches.shape}")
+print("\nColumns and data types:")
+print(matches.dtypes)
+print("\nFirst few rows:")
+print(matches.head())
+
+print("\n2. IDENTIFYING FEATURE TYPES")
+print("-" * 40)
+
+# Separate features and target
+# We'll predict match results (Home Win/Away Win/Draw)
+X = matches.drop('result', axis=1)  # Features
+y = matches['result']  # Target variable
+
+print("Categorical features:")
+categorical_features = ['home_team', 'away_team']
+print(categorical_features)
+
+print("\nNumerical features:")
+numerical_features = ['home_goals', 'away_goals', 'total_goals', 'penalty_goals', 'own_goals']
+print(numerical_features)
+
+print("\nDatetime features:")
+datetime_features = ['datetime']
+print(datetime_features)
+
+print("\n3. FEATURE ENGINEERING")
+print("-" * 40)
+
+# Create useful features from datetime
+X['year'] = X['datetime'].dt.year
+X['month'] = X['datetime'].dt.month
+X['day_of_week'] = X['datetime'].dt.dayofweek
+
+# Remove the original datetime column
+X = X.drop('datetime', axis=1)
+
+# Update numerical features list
+numerical_features.extend(['year', 'month', 'day_of_week'])
+
+print("New numerical features after engineering:")
+print(numerical_features)
+
+print("\n4. HANDLING CATEGORICAL VARIABLES")
+print("-" * 40)
+
+# For team names, we have many categories, so let's use label encoding instead of one-hot
+# to avoid creating too many columns
+print("Original number of unique home teams:", X['home_team'].nunique())
+print("Original number of unique away teams:", X['away_team'].nunique())
+
+# Label encode team names
+team_encoder = LabelEncoder()
+all_teams = pd.concat([X['home_team'], X['away_team']]).unique()
+team_encoder.fit(all_teams)
+
+X['home_team_encoded'] = team_encoder.transform(X['home_team'])
+X['away_team_encoded'] = team_encoder.transform(X['away_team'])
+
+# Remove original team columns
+X = X.drop(['home_team', 'away_team'], axis=1)
+
+# Update feature lists
+categorical_encoded = ['home_team_encoded', 'away_team_encoded']
+numerical_features.extend(categorical_encoded)
+
+print("After encoding - categorical features are now numerical")
+print(f"Encoded features: {categorical_encoded}")
+
+print("\n5. STANDARDIZING NUMERICAL FEATURES")
+print("-" * 40)
+
+print("Before scaling - numerical feature ranges:")
+for feature in numerical_features:
+    if feature in X.columns:
+        print(f"{feature}: {X[feature].min():.2f} to {X[feature].max():.2f}")
+
+# Standardize numerical features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X[numerical_features])
+
+# Create DataFrame with scaled features
+X_scaled_df = pd.DataFrame(X_scaled, columns=numerical_features, index=X.index)
+
+print("\nAfter scaling - all features have mean ~0 and std ~1:")
+print(f"Means: {X_scaled_df.mean().values}")
+print(f"Standard deviations: {X_scaled_df.std().values}")
+
+print("\n6. SPLITTING INTO TRAINING AND TESTING SETS")
+print("-" * 40)
+
+# Also encode the target variable
+target_encoder = LabelEncoder()
+y_encoded = target_encoder.fit_transform(y)
+
+print("Target variable mapping:")
+for i, class_name in enumerate(target_encoder.classes_):
+    print(f"  {i}: {class_name}")
+
+# Split the data (80% training, 20% testing)
+X_train, X_test, y_train, y_test = train_test_split(
+    X_scaled_df, 
+    y_encoded, 
+    test_size=0.2, 
+    random_state=42,  # for reproducibility
+    stratify=y_encoded  # maintain class distribution
+)
+
+print(f"Training set size: {X_train.shape[0]} samples")
+print(f"Testing set size: {X_test.shape[0]} samples")
+print(f"Training features: {X_train.shape[1]}")
+
+print("\nClass distribution in training set:")
+train_class_counts = pd.Series(y_train).value_counts().sort_index()
+for i, count in train_class_counts.items():
+    class_name = target_encoder.inverse_transform([i])[0]
+    print(f"  {class_name}: {count} samples ({count/len(y_train)*100:.1f}%)")
+
+print("\nClass distribution in testing set:")
+test_class_counts = pd.Series(y_test).value_counts().sort_index()
+for i, count in test_class_counts.items():
+    class_name = target_encoder.inverse_transform([i])[0]
+    print(f"  {class_name}: {count} samples ({count/len(y_test)*100:.1f}%)")
+
+print("\n7. FINAL DATASET SUMMARY")
+print("-" * 40)
+
+print("Final feature set:")
+feature_info = pd.DataFrame({
+    'Feature': X_scaled_df.columns,
+    'Type': ['Numerical (scaled)'] * len(X_scaled_df.columns),
+    'Training Mean': X_train.mean().values,
+    'Training Std': X_train.std().values
+})
+print(feature_info)
+
+print(f"\nTarget variable: 'result'")
+print(f"Classes: {list(target_encoder.classes_)}")
+
+print("\n8. SAVING PROCESSED DATA")
+print("-" * 40)
+
+# Save the processed datasets
+processed_data = {
+    'X_train': X_train,
+    'X_test': X_test,
+    'y_train': y_train,
+    'y_test': y_test,
+    'feature_names': X_scaled_df.columns.tolist(),
+    'target_encoder': target_encoder,
+    'team_encoder': team_encoder,
+    'scaler': scaler
+}
+
+# You can save this as a pickle file for later use
+import pickle
+with open('processed_football_data.pkl', 'wb') as f:
+    pickle.dump(processed_data, f)
+
+print("Processed data saved as 'processed_football_data.pkl'")
+
+print("\n=== PRE-PROCESSING COMPLETE ===")
+print("Data is now ready for modeling!")
+print(f"Training set: {X_train.shape[0]} samples")
+print(f"Test set: {X_test.shape[0]} samples")
+print(f"Number of features: {X_train.shape[1]}")
