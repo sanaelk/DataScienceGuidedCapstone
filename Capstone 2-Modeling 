@@ -1,0 +1,253 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pickle
+
+print("=== FOOTBALL MATCH PREDICTION - MODELING ===\n")
+
+# Load the pre-processed data
+with open('processed_football_data.pkl', 'rb') as f:
+    data = pickle.load(f)
+
+X_train, X_test, y_train, y_test = data['X_train'], data['X_test'], data['y_train'], data['y_test']
+feature_names = data['feature_names']
+target_encoder = data['target_encoder']
+
+print("1. DATA OVERVIEW FOR MODELING")
+print("-" * 40)
+print(f"Training set: {X_train.shape[0]} matches")
+print(f"Test set: {X_test.shape[0]} matches")
+print(f"Number of features: {X_train.shape[1]}")
+print(f"Features: {feature_names}")
+print(f"Target classes: {list(target_encoder.classes_)}")
+
+# Class distribution
+class_names = target_encoder.classes_
+print(f"\nClass distribution:")
+for i, class_name in enumerate(class_names):
+    count = np.sum(y_train == i)
+    print(f"  {class_name}: {count} samples ({count/len(y_train)*100:.1f}%)")
+
+print("\n2. MODEL SELECTION RATIONALE")
+print("-" * 40)
+print("Since we're predicting match outcomes (Home Win/Away Win/Draw):")
+print("• This is a MULTI-CLASS CLASSIFICATION problem")
+print("• We'll try 3 different algorithms:")
+print("  1. Logistic Regression - Simple, interpretable baseline")
+print("  2. Random Forest - Handles non-linear relationships well")
+print("  3. Support Vector Machine - Good for complex decision boundaries")
+
+print("\n3. MODEL 1: LOGISTIC REGRESSION")
+print("-" * 40)
+
+# Logistic Regression
+lr_model = LogisticRegression(
+    multi_class='multinomial',  # for multi-class
+    random_state=42,
+    max_iter=1000  # ensure convergence
+)
+
+print("Training Logistic Regression...")
+lr_model.fit(X_train, y_train)
+
+# Predictions
+y_pred_lr = lr_model.predict(X_test)
+accuracy_lr = accuracy_score(y_test, y_pred_lr)
+
+print(f"Logistic Regression Accuracy: {accuracy_lr:.3f}")
+
+# Cross-validation
+cv_scores_lr = cross_val_score(lr_model, X_train, y_train, cv=5)
+print(f"Cross-validation scores: {cv_scores_lr}")
+print(f"Mean CV accuracy: {cv_scores_lr.mean():.3f} (+/- {cv_scores_lr.std() * 2:.3f})")
+
+print("\n4. MODEL 2: RANDOM FOREST")
+print("-" * 40)
+
+# Random Forest with basic hyperparameter tuning
+rf_model = RandomForestClassifier(
+    n_estimators=100,
+    random_state=42,
+    max_depth=10  # Prevent overfitting
+)
+
+print("Training Random Forest...")
+rf_model.fit(X_train, y_train)
+
+# Predictions
+y_pred_rf = rf_model.predict(X_test)
+accuracy_rf = accuracy_score(y_test, y_pred_rf)
+
+print(f"Random Forest Accuracy: {accuracy_rf:.3f}")
+
+# Cross-validation
+cv_scores_rf = cross_val_score(rf_model, X_train, y_train, cv=5)
+print(f"Cross-validation scores: {cv_scores_rf}")
+print(f"Mean CV accuracy: {cv_scores_rf.mean():.3f} (+/- {cv_scores_rf.std() * 2:.3f})")
+
+print("\n5. MODEL 3: SUPPORT VECTOR MACHINE")
+print("-" * 40)
+
+# SVM with linear kernel (faster and works well for our size)
+svm_model = SVC(
+    kernel='linear',
+    random_state=42,
+    probability=True  # Enable probability predictions
+)
+
+print("Training Support Vector Machine...")
+svm_model.fit(X_train, y_train)
+
+# Predictions
+y_pred_svm = svm_model.predict(X_test)
+accuracy_svm = accuracy_score(y_test, y_pred_svm)
+
+print(f"SVM Accuracy: {accuracy_svm:.3f}")
+
+# Cross-validation
+cv_scores_svm = cross_val_score(svm_model, X_train, y_train, cv=5)
+print(f"Cross-validation scores: {cv_scores_svm}")
+print(f"Mean CV accuracy: {cv_scores_svm.mean():.3f} (+/- {cv_scores_svm.std() * 2:.3f})")
+
+print("\n6. MODEL COMPARISON")
+print("-" * 40)
+
+# Compare all models
+models = {
+    'Logistic Regression': (y_pred_lr, accuracy_lr, cv_scores_lr.mean()),
+    'Random Forest': (y_pred_rf, accuracy_rf, cv_scores_rf.mean()),
+    'Support Vector Machine': (y_pred_svm, accuracy_svm, cv_scores_svm.mean())
+}
+
+comparison_df = pd.DataFrame({
+    'Model': list(models.keys()),
+    'Test Accuracy': [models[model][1] for model in models],
+    'CV Mean Accuracy': [models[model][2] for model in models]
+})
+
+print("Model Performance Comparison:")
+print(comparison_df.sort_values('Test Accuracy', ascending=False))
+
+# Visual comparison
+plt.figure(figsize=(10, 6))
+x_pos = np.arange(len(models))
+width = 0.35
+
+plt.bar(x_pos - width/2, comparison_df['Test Accuracy'], width, label='Test Accuracy', alpha=0.7)
+plt.bar(x_pos + width/2, comparison_df['CV Mean Accuracy'], width, label='CV Mean Accuracy', alpha=0.7)
+
+plt.xlabel('Models')
+plt.ylabel('Accuracy')
+plt.title('Model Performance Comparison')
+plt.xticks(x_pos, list(models.keys()), rotation=45)
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+print("\n7. DETAILED ANALYSIS OF BEST MODEL")
+print("-" * 40)
+
+# Identify best model
+best_model_name = comparison_df.loc[comparison_df['Test Accuracy'].idxmax(), 'Model']
+print(f"Best Model: {best_model_name}")
+
+if best_model_name == 'Logistic Regression':
+    best_model = lr_model
+    y_pred_best = y_pred_lr
+elif best_model_name == 'Random Forest':
+    best_model = rf_model
+    y_pred_best = y_pred_rf
+else:
+    best_model = svm_model
+    y_pred_best = y_pred_svm
+
+# Detailed classification report
+print(f"\nDetailed performance for {best_model_name}:")
+print(classification_report(y_test, y_pred_best, target_names=class_names))
+
+# Confusion matrix
+plt.figure(figsize=(8, 6))
+cm = confusion_matrix(y_test, y_pred_best)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=class_names, yticklabels=class_names)
+plt.title(f'Confusion Matrix - {best_model_name}')
+plt.ylabel('Actual')
+plt.xlabel('Predicted')
+plt.show()
+
+print("\n8. FEATURE IMPORTANCE (Random Forest)")
+print("-" * 40)
+
+if hasattr(rf_model, 'feature_importances_'):
+    feature_imp = pd.DataFrame({
+        'feature': feature_names,
+        'importance': rf_model.feature_importances_
+    }).sort_values('importance', ascending=False)
+    
+    print("Top 10 most important features:")
+    print(feature_imp.head(10))
+    
+    # Plot feature importance
+    plt.figure(figsize=(10, 6))
+    sns.barplot(data=feature_imp.head(10), x='importance', y='feature')
+    plt.title('Top 10 Feature Importances - Random Forest')
+    plt.tight_layout()
+    plt.show()
+
+print("\n9. HYPERPARAMETER TUNING - RANDOM FOREST")
+print("-" * 40)
+
+# Simple hyperparameter tuning for the best model type
+if best_model_name == 'Random Forest':
+    print("Performing hyperparameter tuning...")
+    
+    param_grid = {
+        'n_estimators': [50, 100, 200],
+        'max_depth': [5, 10, 15],
+        'min_samples_split': [2, 5, 10]
+    }
+    
+    rf_tuned = RandomForestClassifier(random_state=42)
+    grid_search = GridSearchCV(rf_tuned, param_grid, cv=3, scoring='accuracy')
+    grid_search.fit(X_train, y_train)
+    
+    print(f"Best parameters: {grid_search.best_params_}")
+    print(f"Best cross-validation score: {grid_search.best_score_:.3f}")
+    
+    # Test the tuned model
+    y_pred_tuned = grid_search.predict(X_test)
+    accuracy_tuned = accuracy_score(y_test, y_pred_tuned)
+    print(f"Tuned model test accuracy: {accuracy_tuned:.3f}")
+
+print("\n10. FINAL MODEL SELECTION")
+print("-" * 40)
+
+print("MODEL SELECTION DECISION:")
+print(f"• Best performing model: {best_model_name}")
+print(f"• Test accuracy: {comparison_df.loc[comparison_df['Test Accuracy'].idxmax(), 'Test Accuracy']:.3f}")
+print(f"• Cross-validation consistency: {comparison_df.loc[comparison_df['Test Accuracy'].idxmax(), 'CV Mean Accuracy']:.3f}")
+
+print("\nWhy this model is best:")
+print("• Good balance of accuracy and generalization")
+print("• Consistent performance across cross-validation folds")
+print("• Suitable for multi-class classification problem")
+
+# Save the best model
+with open('best_football_model.pkl', 'wb') as f:
+    pickle.dump({
+        'model': best_model,
+        'feature_names': feature_names,
+        'target_encoder': target_encoder,
+        'accuracy': comparison_df.loc[comparison_df['Test Accuracy'].idxmax(), 'Test Accuracy']
+    }, f)
+
+print(f"\nBest model saved as 'best_football_model.pkl'")
+
+print("\n=== MODELING COMPLETE ===")
