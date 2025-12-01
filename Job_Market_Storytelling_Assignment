@@ -1,0 +1,258 @@
+#Job market insight dataset storytelling 
+# This dataset provides a comprehensive view of job market opportunities, capturing key details about open positions across industries. It is designed for analysts, data scientists, and recruiters to explore trends in job roles, required skills, salaries, and experience levels. The dataset is ideal for tasks such as labor market analysis, skill gap identification, salary benchmarking, and predictive modeling of hiring trends.
+#Target audience:  people looking for a job in this data engineering market
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_theme(style="whitegrid")
+
+# ------------------------------------------------------------
+# Data source reference 
+# Kaggle dataset: Job Market Insight
+# https://www.kaggle.com/datasets/shaistashahid/job-market-insight
+# ------------------------------------------------------------
+
+# Load the dataset 
+df = pd.read_csv("job_market.csv")
+
+# Basic cleaning and feature engineering
+df["publication_date"] = pd.to_datetime(df["publication_date"], errors="coerce")
+df["salary_mid"] = (df["salary_min"] + df["salary_max"]) / 2
+
+
+# ------------------------------------------------------------
+# 1. First look at the market
+# ------------------------------------------------------------
+#  Get a sense of how big this snapshot is and what kinds of jobs it contains.
+
+print("Number of job postings:", len(df))
+print("\nColumns:", df.columns.tolist())
+
+print("\nTop 10 locations:")
+print(df["location"].value_counts().head(10))
+
+print("\nTop 10 job titles:")
+print(df["job_title"].value_counts().head(10))
+
+# Visual: Top hiring locations
+top_locations = df["location"].value_counts().head(10)
+
+plt.figure(figsize=(10, 5))
+top_locations.sort_values().plot(kind="barh")
+plt.title("Top 10 Locations by Number of Job Postings")
+plt.xlabel("Number of Postings")
+plt.ylabel("Location")
+plt.tight_layout()
+plt.show()
+
+
+# ------------------------------------------------------------
+# 2. Salary landscape
+# ------------------------------------------------------------
+# Story: What does pay look like in this snapshot? Are we in the 5-figure or 6-figure world?
+
+print("\nSummary of midpoint salary (salary_mid):")
+print(df["salary_mid"].describe())
+
+plt.figure(figsize=(8, 5))
+plt.hist(df["salary_mid"].dropna(), bins=25)
+plt.title("Distribution of Salary Midpoint")
+plt.xlabel("Salary Midpoint")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.show()
+
+
+# ------------------------------------------------------------
+# 3. Experience requirements
+# ------------------------------------------------------------
+# Story: How many years of experience are employers asking for?
+
+print("\nSummary of experience_required (years):")
+print(df["experience_required"].describe())
+
+plt.figure(figsize=(8, 5))
+plt.hist(df["experience_required"].dropna(), bins=12)
+plt.title("Distribution of Experience Required (Years)")
+plt.xlabel("Years of Experience")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.show()
+
+
+# ------------------------------------------------------------
+# 4. Relationship between experience and salary
+# ------------------------------------------------------------
+# Story: Does more experience generally line up with higher pay in this dataset?
+
+exp_salary = df[["experience_required", "salary_mid"]].dropna()
+
+plt.figure(figsize=(8, 5))
+plt.scatter(exp_salary["experience_required"], exp_salary["salary_mid"], alpha=0.7)
+plt.title("Experience Required vs Salary Midpoint")
+plt.xlabel("Experience Required (Years)")
+plt.ylabel("Salary Midpoint")
+plt.tight_layout()
+plt.show()
+
+corr_exp_salary = exp_salary.corr().loc["experience_required", "salary_mid"]
+print("\nCorrelation between experience_required and salary_mid:", round(corr_exp_salary, 3))
+
+
+# ------------------------------------------------------------
+# 5. Skill frequency: what the market actually asks for
+# ------------------------------------------------------------
+# Story: Turn the skills column into a list and see what keeps showing up.
+
+skills_series = df["skills"].dropna().astype(str).str.split(",")
+all_skills = skills_series.explode().str.strip().str.lower()
+
+skill_counts = all_skills.value_counts()
+print("\nTop 20 skills by frequency:")
+print(skill_counts.head(20))
+
+top_n = 15
+top_skills = skill_counts.head(top_n)
+
+plt.figure(figsize=(10, 6))
+top_skills.sort_values().plot(kind="barh")
+plt.title(f"Top {top_n} Skills in Job Postings")
+plt.xlabel("Number of Postings")
+plt.ylabel("Skill")
+plt.tight_layout()
+plt.show()
+
+
+# ------------------------------------------------------------
+# 6. Which skills seem to pay more?
+# ------------------------------------------------------------
+# Story: Not all skills are equal. Some are common, others also seem tied to higher salaries.
+
+skills_exploded = (
+    df[["salary_mid", "skills"]]
+    .dropna(subset=["salary_mid", "skills"])
+    .assign(skills=lambda d: d["skills"].str.split(","))
+    .explode("skills")
+)
+
+skills_exploded["skills"] = skills_exploded["skills"].str.strip().str.lower()
+
+skill_salary_stats = (
+    skills_exploded
+    .groupby("skills")["salary_mid"]
+    .agg(["count", "median", "mean"])
+    .sort_values("median", ascending=False)
+)
+
+# Filter to skills that show up enough times to be meaningful
+min_count = 20
+skill_salary_filtered = skill_salary_stats[skill_salary_stats["count"] >= min_count]
+
+print("\nTop skills by median salary (min count = 20):")
+print(skill_salary_filtered.head(10))
+
+top_paid_skills = skill_salary_filtered.head(10)
+
+plt.figure(figsize=(10, 6))
+top_paid_skills["median"].sort_values().plot(kind="barh")
+plt.title("Top Skills by Median Salary (min 20 mentions)")
+plt.xlabel("Median Salary (Midpoint)")
+plt.ylabel("Skill")
+plt.tight_layout()
+plt.show()
+
+
+# ------------------------------------------------------------
+# 7. Hypothesis: Do cloud skills increase salary?
+# ------------------------------------------------------------
+# Hypothesis: roles that mention cloud skills (AWS / Azure / GCP / Cloud) pay more.
+
+def has_cloud(skills_str):
+    if not isinstance(skills_str, str):
+        return False
+    s = skills_str.lower()
+    cloud_keywords = ["aws", "azure", "gcp", "google cloud", "cloud"]
+    return any(kw in s for kw in cloud_keywords)
+
+df["has_cloud_skill"] = df["skills"].apply(has_cloud)
+
+cloud_roles = df[df["has_cloud_skill"] & df["salary_mid"].notna()]
+noncloud_roles = df[~df["has_cloud_skill"] & df["salary_mid"].notna()]
+
+cloud_median = cloud_roles["salary_mid"].median()
+noncloud_median = noncloud_roles["salary_mid"].median()
+
+print("\nCloud roles count:", len(cloud_roles))
+print("Non-cloud roles count:", len(noncloud_roles))
+print("Median salary_mid (cloud roles):", round(cloud_median, 2))
+print("Median salary_mid (non-cloud roles):", round(noncloud_median, 2))
+print("Median difference (cloud - non-cloud):", round(cloud_median - noncloud_median, 2))
+
+comparison_df = pd.DataFrame({
+    "salary_mid": pd.concat([cloud_roles["salary_mid"], noncloud_roles["salary_mid"]], ignore_index=True),
+    "group": ["Cloud"] * len(cloud_roles) + ["Non-cloud"] * len(noncloud_roles)
+})
+
+plt.figure(figsize=(8, 5))
+sns.boxplot(data=comparison_df, x="group", y="salary_mid")
+plt.title("Salary Midpoint: Cloud vs Non-cloud Roles")
+plt.xlabel("Role Type")
+plt.ylabel("Salary Midpoint")
+plt.tight_layout()
+plt.show()
+
+
+# ------------------------------------------------------------
+# 8. Correlations among numeric features
+# ------------------------------------------------------------
+#  Look at how the numeric variables relate overall, not just pairwise.
+
+numeric_cols = ["salary_min", "salary_max", "salary_mid", "experience_required"]
+corr_matrix = df[numeric_cols].corr()
+
+print("\nCorrelation matrix:")
+print(corr_matrix)
+
+plt.figure(figsize=(6, 5))
+sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap="coolwarm", vmin=-1, vmax=1)
+plt.title("Correlation Heatmap (Numeric Features)")
+plt.tight_layout()
+plt.show()
+
+
+# ------------------------------------------------------------
+# 9. Time component 
+# ------------------------------------------------------------
+#  Check if there is any variation by publication date,
+# even though this dataset is essentially one snapshot in time.
+
+date_df = df[df["publication_date"].notna()].copy()
+
+if not date_df.empty:
+    postings_per_date = date_df.groupby("publication_date").size()
+    median_salary_per_date = date_df.groupby("publication_date")["salary_mid"].median()
+
+    print("\nPostings per publication date:")
+    print(postings_per_date)
+
+    plt.figure(figsize=(10, 4))
+    postings_per_date.plot(marker="o")
+    plt.title("Number of Job Postings by Publication Date")
+    plt.xlabel("Publication Date")
+    plt.ylabel("Number of Postings")
+    plt.tight_layout()
+    plt.show()
+
+    plt.figure(figsize=(10, 4))
+    median_salary_per_date.plot(marker="o")
+    plt.title("Median Salary Midpoint by Publication Date")
+    plt.xlabel("Publication Date")
+    plt.ylabel("Median Salary Midpoint")
+    plt.tight_layout()
+    plt.show()
+else:
+    print("\nNo valid publication_date values for time-series analysis.")
+
+
